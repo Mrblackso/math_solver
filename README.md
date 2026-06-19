@@ -1,4 +1,4 @@
-<video src="https://raw.githubusercontent.com/Mrblackso/math_solver/main/%E6%BC%94%E7%A4%BA%E8%A7%86%E9%A2%91.mp4" controls width="100%"></video>
+<video src="https://raw.githubusercontent.com/Mrblackso/math_solver/main/demo.mp4" controls width="100%"></video>
 
 # 战胜高数！！！— 数学题解算器 🧮
 
