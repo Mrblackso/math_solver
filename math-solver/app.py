@@ -5,7 +5,7 @@ import json
 import tempfile
 from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context, redirect
 
-from config import MAX_IMAGE_SIZE_MB, MAX_IMAGE_DIMENSION, is_configured, DASHSCOPE_API_KEY, DASHSCOPE_BASE_URL, MODEL
+from config import MAX_IMAGE_SIZE_MB, MAX_IMAGE_DIMENSION, is_configured
 from services.qwen_client import (
     recognize_image,
     solve_problem_stream,
@@ -268,12 +268,12 @@ def api_settings():
     env_path = os.path.join(os.path.dirname(__file__), ".env")
 
     if request.method == "GET":
-        key = DASHSCOPE_API_KEY or ""
+        key = os.getenv("DASHSCOPE_API_KEY") or ""
         masked = key[:3] + "***" + key[-4:] if len(key) > 8 else (key[:2] + "***" if len(key) > 3 else "")
         return jsonify({
             "api_key_masked": masked,
-            "model": MODEL,
-            "base_url": DASHSCOPE_BASE_URL,
+            "model": os.getenv("VISION_MODEL", "qwen3.5-omni-plus"),
+            "base_url": os.getenv("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
         })
 
     # POST: 保存

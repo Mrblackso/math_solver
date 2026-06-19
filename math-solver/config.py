@@ -35,5 +35,6 @@ MAX_CHAT_HISTORY = 20
 
 
 def is_configured() -> bool:
-    """检查是否已配置 API Key"""
-    return bool(DASHSCOPE_API_KEY and DASHSCOPE_API_KEY.strip())
+    """检查是否已配置 API Key（实时读取环境变量）"""
+    key = os.getenv("DASHSCOPE_API_KEY")
+    return bool(key and key.strip())
