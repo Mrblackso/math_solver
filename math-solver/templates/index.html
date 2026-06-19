@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>战胜高数！！！</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <!-- MathJax 3 -->
+  <script>
+    MathJax = {
+      tex: {
+        inlineMath: [['$', '$'], ['\\(', '\\)']],
+        displayMath: [['$$', '$$'], ['\\[', '\\]']],
+        processEscapes: false,
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre'],
+      },
+    };
+  </script>
+  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+  <!-- marked.js -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <!-- ====== 头部 ====== -->
+    <header class="header">
+      <h1 class="logo">defeat math</h1>
+      <span class="subtitle">all in!!!</span>
+      <button class="btn btn-outline" id="btnReset" title="开始新题目">＋ 新题目</button>
+    </header>
+
+    <!-- ====== 主区域 ====== -->
+    <main class="main">
+      <!-- 左栏：输入区 -->
+      <section class="panel upload-panel" id="uploadPanel">
+        <!-- 模式切换 Tab -->
+        <div class="tabs">
+          <button class="tab active" id="tabImage">📷 图片</button>
+          <button class="tab" id="tabText">📝 文本</button>
+        </div>
+
+        <!-- 图片上传区 -->
+        <div class="upload-zone" id="uploadZone">
+          <input type="file" id="fileInput" accept="image/*" hidden>
+          <div class="upload-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+          </div>
+          <p class="upload-text">拖拽图片到这里，或 <span class="upload-link">点击选择文件</span></p>
+          <p class="upload-hint">支持 JPG、PNG、GIF、WebP，最大 20MB</p>
+        </div>
+
+        <!-- 文本输入区 -->
+        <textarea
+          class="text-input hidden"
+          id="textInputArea"
+          placeholder="在此粘贴数学题目，例如：&#10;设 f(x) 具有二阶连续导数，f(0)=f'(0)=0，f''(0)=1..."
+          rows="8"
+        ></textarea>
+
+        <!-- 图片预览 -->
+        <div class="preview hidden" id="preview">
+          <img id="previewImg" src="" alt="预览">
+          <button class="preview-remove" id="btnRemove" title="移除图片">&times;</button>
+        </div>
+
+        <!-- 操作按钮行 -->
+        <div class="btn-row">
+          <button class="btn btn-primary btn-block" id="btnSolve" disabled>
+            <span class="btn-text">开始解答</span>
+            <span class="btn-spinner hidden"><span class="spinner"></span> 识别中...</span>
+          </button>
+          <button class="btn btn-cancel hidden" id="btnCancel">✕ 取消</button>
+        </div>
+
+        <div class="error-msg hidden" id="uploadError"></div>
+      </section>
+
+      <!-- 右栏：解答区 -->
+      <section class="panel solution-panel" id="solutionPanel">
+        <div class="solution-empty" id="solutionEmpty">
+          <div class="empty-icon">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+              <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
+              <rect x="9" y="3" width="6" height="4" rx="1"/>
+              <path d="M9 12l2 2 4-4"/>
+            </svg>
+          </div>
+          <p>上传图片或粘贴题目开始解题</p>
+        </div>
+        <div class="solution-content hidden" id="solutionContent">
+          <details class="recognized-box" id="recognizedBox">
+            <summary>📷 识别结果</summary>
+            <div class="recognized-text" id="recognizedText"></div>
+          </details>
+          <div class="solution-body markdown-body" id="solutionBody"></div>
+        </div>
+        <div class="solution-loading hidden" id="solutionLoading">
+          <span class="spinner"></span>
+          <p>正在生成解答...</p>
+        </div>
+      </section>
+    </main>
+
+    <!-- ====== 底部：聊天区 ====== -->
+    <section class="chat-panel hidden" id="chatPanel">
+      <div class="chat-header">
+        <h3>💬 追问</h3>
+        <span class="chat-hint">对解答有疑问？在这里继续追问</span>
+      </div>
+      <div class="chat-messages" id="chatMessages">
+        <div class="chat-empty" id="chatEmpty">
+          <p>在下方输入你的问题</p>
+        </div>
+      </div>
+      <div class="chat-input-row">
+        <textarea
+          id="chatInput"
+          class="chat-input"
+          placeholder="输入你的问题，例如：这一步为什么用积分？"
+          rows="1"
+          maxlength="4000"
+        ></textarea>
+        <button class="btn btn-primary" id="btnSend" disabled>
+          <span class="btn-text">发送</span>
+          <span class="btn-spinner hidden"><span class="spinner spinner-sm"></span></span>
+        </button>
+        <button class="btn btn-stop-chat hidden" id="btnStopChat">⏹ 停止生成</button>
+      </div>
+      <div class="chat-char-count">
+        <span id="charCount">0</span> / 4000
+      </div>
+    </section>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
