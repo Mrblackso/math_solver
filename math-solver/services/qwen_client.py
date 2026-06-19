@@ -25,9 +25,10 @@ def _build_user_content(text: str, image_path: str = None):
     """构建用户消息 content：纯文本或 图片+文本 多模态数组"""
     if image_path:
         data_url = _image_to_data_url(image_path)
+        content_text = text.strip() if text else "请分析这张图片，并结合之前的题目和解答进行回答。"
         return [
             {"type": "image_url", "image_url": {"url": data_url}},
-            {"type": "text", "text": text},
+            {"type": "text", "text": content_text},
         ]
     return text
 

@@ -201,8 +201,8 @@ def api_chat():
 
     if not session_id:
         return jsonify({"error": "缺少会话 ID"}), 400
-    if not message:
-        return jsonify({"error": "请输入消息"}), 400
+    if not message and not image_path:
+        return jsonify({"error": "请输入消息或上传图片"}), 400
     if len(message) > 4000:
         return jsonify({"error": "消息过长"}), 400
 

@@ -386,7 +386,7 @@ function resetChat() {
 
 chatInput.addEventListener("input", () => {
   updateCharCount();
-  btnSend.disabled = !chatInput.value.trim() || STATE.isSending;
+  btnSend.disabled = (!chatInput.value.trim() && !STATE.chatImageFile) || STATE.isSending;
 });
 
 function updateCharCount() {
@@ -442,7 +442,7 @@ btnSend.addEventListener("click", handleSend);
 
 async function handleSend() {
   const message = chatInput.value.trim();
-  if (!message || STATE.isSending || !STATE.sessionId) return;
+  if ((!message && !STATE.chatImageFile) || STATE.isSending || !STATE.sessionId) return;
 
   STATE.isSending = true;
   STATE.pendingMessage = message;  // 保存以便打断后恢复
@@ -626,4 +626,7 @@ async function restoreSession() {
   }
 }
 
-document.addEventListener("DOMContentLoaded", restoreSession);
+document.addEventListener("DOMContentLoaded", () => {
+  switchMode("image");  // 确保初始状态正确显示
+  restoreSession();
+});
