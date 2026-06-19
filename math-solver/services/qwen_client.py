@@ -160,32 +160,3 @@ def chat_reply_stream(recognized_text: str, solution: str, history: list[dict], 
     yield from _call_api_stream(messages, temperature=0.5)
 
 
-# 保留同步版本作为 fallback
-def solve_problem(recognized_text: str) -> str:
-    return _call_api([{"role": "user", "content": (
-        "请逐步解答以下数学题目。\n\n"
-        "要求：\n"
-        "1. 直接开始解答，不要寒暄，不要说你是什么角色，不要评价题目难易\n"
-        "2. 每一步推理都要有清晰的文字解释\n"
-        "3. " + LATEX_HINT + "\n"
-        "4. 最终答案用 $\\boxed{...}$ 标出\n"
-        "5. 如果题目包含多个小问，请用（1）、（2）等分别标注\n"
-        "6. 用中文回答\n\n"
-        f"题目：\n---\n{recognized_text}\n---"
-    )}], temperature=0.3)
-
-
-def chat_reply(recognized_text: str, solution: str, history: list[dict], new_message: str, image_path: str = None) -> str:
-    system_msg = (
-        f"原始题目：\n{recognized_text}\n\n"
-        f"之前的完整解答：\n{solution}\n\n"
-        "学生正在针对这道题追问。如果学生发送了图片，请结合图片内容回答。\n"
-        "注意：直接回答，不要寒暄，不要说你是什么角色，不要评价问题好坏。"
-        + LATEX_HINT + "\n"
-        "如果学生问的是不相关的问题，请简短引导回题目本身。"
-    )
-    messages = [{"role": "system", "content": system_msg}]
-    for msg in history[-20:]:
-        messages.append(msg)
-    messages.append({"role": "user", "content": _build_user_content(new_message, image_path)})
-    return _call_api(messages, temperature=0.5)

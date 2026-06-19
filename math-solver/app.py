@@ -10,8 +10,6 @@ from services.qwen_client import (
     recognize_image,
     solve_problem_stream,
     chat_reply_stream,
-    solve_problem,
-    chat_reply,
     _build_user_content,
 )
 from services.session_manager import SessionManager
