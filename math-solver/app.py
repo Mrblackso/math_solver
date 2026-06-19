@@ -3,9 +3,9 @@
 import os
 import json
 import tempfile
-from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context
+from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context, redirect
 
-from config import MAX_IMAGE_SIZE_MB, MAX_IMAGE_DIMENSION
+from config import MAX_IMAGE_SIZE_MB, MAX_IMAGE_DIMENSION, is_configured, DASHSCOPE_API_KEY, DASHSCOPE_BASE_URL, MODEL
 from services.qwen_client import (
     recognize_image,
     solve_problem_stream,
@@ -62,6 +62,8 @@ def _error_handler(e: Exception):
 
 @app.route("/")
 def index():
+    if not is_configured():
+        return redirect("/settings")
     return send_from_directory("templates", "index.html")
 
 
@@ -251,6 +253,75 @@ def api_chat():
             "X-Accel-Buffering": "no",
         },
     )
+
+
+# ==================== 设置页面 ====================
+
+@app.route("/settings")
+def settings_page():
+    return send_from_directory("templates", "settings.html")
+
+
+@app.route("/api/settings", methods=["GET", "POST"])
+def api_settings():
+    """GET: 返回当前配置（Key 脱敏）；POST: 保存配置到 .env 文件"""
+    env_path = os.path.join(os.path.dirname(__file__), ".env")
+
+    if request.method == "GET":
+        key = DASHSCOPE_API_KEY or ""
+        masked = key[:3] + "***" + key[-4:] if len(key) > 8 else (key[:2] + "***" if len(key) > 3 else "")
+        return jsonify({
+            "api_key_masked": masked,
+            "model": MODEL,
+            "base_url": DASHSCOPE_BASE_URL,
+        })
+
+    # POST: 保存
+    data = request.get_json(silent=True) or {}
+    api_key = (data.get("api_key") or "").strip()
+    model = (data.get("model") or "").strip()
+    base_url = (data.get("base_url") or "").strip()
+
+    if not api_key:
+        return jsonify({"error": "请输入 API 密钥"}), 400
+
+    lines = []
+    if os.path.exists(env_path):
+        with open(env_path, "r", encoding="utf-8") as f:
+            lines = f.read().splitlines()
+
+    updated = {"DASHSCOPE_API_KEY": False, "VISION_MODEL": False, "DASHSCOPE_BASE_URL": False}
+    new_lines = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("DASHSCOPE_API_KEY=") or stripped.startswith("DASHSCOPE_API_KEY "):
+            new_lines.append(f"DASHSCOPE_API_KEY={api_key}")
+            updated["DASHSCOPE_API_KEY"] = True
+        elif stripped.startswith("VISION_MODEL=") or stripped.startswith("VISION_MODEL "):
+            new_lines.append(f"VISION_MODEL={model or 'qwen3.5-omni-plus'}")
+            updated["VISION_MODEL"] = True
+        elif stripped.startswith("DASHSCOPE_BASE_URL=") or stripped.startswith("DASHSCOPE_BASE_URL "):
+            new_lines.append(f"DASHSCOPE_BASE_URL={base_url or 'https://dashscope.aliyuncs.com/compatible-mode/v1'}")
+            updated["DASHSCOPE_BASE_URL"] = True
+        else:
+            new_lines.append(line)
+
+    for key_name, env_key in [("DASHSCOPE_API_KEY", "DASHSCOPE_API_KEY"), ("VISION_MODEL", "VISION_MODEL"), ("DASHSCOPE_BASE_URL", "DASHSCOPE_BASE_URL")]:
+        if not updated[env_key]:
+            val = api_key if env_key == "DASHSCOPE_API_KEY" else (model if env_key == "VISION_MODEL" else (base_url or "https://dashscope.aliyuncs.com/compatible-mode/v1"))
+            new_lines.append(f"{env_key}={val}")
+
+    with open(env_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(new_lines) + "\n")
+
+    # 更新当前进程环境变量
+    os.environ["DASHSCOPE_API_KEY"] = api_key
+    if model:
+        os.environ["VISION_MODEL"] = model
+    if base_url:
+        os.environ["DASHSCOPE_BASE_URL"] = base_url
+
+    return jsonify({"success": True})
 
 
 # ==================== 非流式 API（保留兼容） ====================

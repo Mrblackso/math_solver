@@ -1,9 +1,20 @@
 """千问 API 封装 — vision 识别 + 文本解题 + 聊天追问"""
 
+import os
 import base64
 import json
 import requests
-from config import DASHSCOPE_API_KEY, DASHSCOPE_BASE_URL, MODEL, API_TIMEOUT_SECONDS
+from config import API_TIMEOUT_SECONDS
+
+# 动态读取（支持设置页面修改后即时生效）
+def _get_api_key():
+    return os.getenv("DASHSCOPE_API_KEY", "")
+
+def _get_base_url():
+    return os.getenv("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+
+def _get_model():
+    return os.getenv("VISION_MODEL", "qwen3.5-omni-plus")
 
 LATEX_HINT = (
     "数学公式必须用LaTeX格式：行内公式用 $...$ 包裹，独立公式用 $$...$$ 包裹。"
@@ -35,13 +46,13 @@ def _build_user_content(text: str, image_path: str = None):
 
 def _call_api(messages: list[dict], temperature: float = 0.3) -> str:
     """同步调用千问 API，返回完整回复"""
-    url = DASHSCOPE_BASE_URL.rstrip("/") + "/chat/completions"
+    url = _get_base_url().rstrip("/") + "/chat/completions"
     headers = {
-        "Authorization": f"Bearer {DASHSCOPE_API_KEY}",
+        "Authorization": f"Bearer {_get_api_key()}",
         "Content-Type": "application/json",
     }
     payload = {
-        "model": MODEL,
+        "model": _get_model(),
         "messages": messages,
         "temperature": temperature,
         "max_tokens": 8192,
@@ -53,13 +64,13 @@ def _call_api(messages: list[dict], temperature: float = 0.3) -> str:
 
 def _call_api_stream(messages: list[dict], temperature: float = 0.3):
     """流式调用千问 API，逐 chunk yield 文本"""
-    url = DASHSCOPE_BASE_URL.rstrip("/") + "/chat/completions"
+    url = _get_base_url().rstrip("/") + "/chat/completions"
     headers = {
-        "Authorization": f"Bearer {DASHSCOPE_API_KEY}",
+        "Authorization": f"Bearer {_get_api_key()}",
         "Content-Type": "application/json",
     }
     payload = {
-        "model": MODEL,
+        "model": _get_model(),
         "messages": messages,
         "temperature": temperature,
         "max_tokens": 8192,

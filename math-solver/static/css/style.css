@@ -67,6 +67,13 @@ body {
 .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
 .btn-outline { background: transparent; color: var(--accent); border: 1.5px solid var(--accent); }
 .btn-outline:hover { background: var(--accent-light); }
+.btn-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; padding: 0; border-radius: var(--radius-sm);
+  font-size: 1.1rem; text-decoration: none; color: var(--text-secondary);
+  transition: all var(--transition);
+}
+.btn-icon:hover { background: var(--surface-hover); color: var(--text); }
 .btn-block { width: 100%; justify-content: center; }
 
 .btn-spinner.hidden, .btn-text.hidden { display: none; }

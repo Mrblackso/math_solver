@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>设置 · 数学题解算器</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    .settings-page {
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100vh; background: var(--bg); padding: 20px;
+    }
+    .settings-card {
+      background: var(--surface); border-radius: var(--radius);
+      box-shadow: var(--shadow-lg); padding: 40px 36px;
+      max-width: 460px; width: 100%;
+    }
+    .settings-card h2 {
+      font-size: 1.4rem; margin-bottom: 6px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .settings-card .subtitle {
+      color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 28px;
+    }
+    .settings-field {
+      margin-bottom: 20px;
+    }
+    .settings-field label {
+      display: block; font-size: 0.85rem; font-weight: 600;
+      margin-bottom: 6px; color: var(--text);
+    }
+    .settings-field .hint {
+      font-size: 0.75rem; color: var(--text-secondary); margin-top: 4px;
+    }
+    .settings-field .hint a {
+      color: var(--accent); text-decoration: none;
+    }
+    .settings-field input {
+      width: 100%; padding: 10px 12px; border: 1px solid var(--border);
+      border-radius: var(--radius-sm); font-size: 0.9rem; font-family: var(--font-sans);
+      outline: none; transition: border-color var(--transition);
+    }
+    .settings-field input:focus { border-color: var(--accent); }
+    .input-row { display: flex; gap: 8px; }
+    .input-row input { flex: 1; }
+    .toggle-pw {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 42px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--surface); cursor: pointer; font-size: 1.1rem;
+      transition: all var(--transition); flex-shrink: 0;
+    }
+    .toggle-pw:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-save {
+      width: 100%; padding: 12px; border: none; border-radius: var(--radius-sm);
+      font-size: 0.95rem; font-weight: 600; cursor: pointer;
+      background: var(--accent); color: #fff; margin-top: 8px;
+      transition: all var(--transition);
+    }
+    .btn-save:hover { background: var(--accent-hover); }
+    .btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
+    .settings-msg {
+      margin-top: 14px; padding: 10px 14px; border-radius: var(--radius-sm);
+      font-size: 0.85rem; text-align: center; display: none;
+    }
+    .settings-msg.success { display: block; background: #ecfdf5; color: var(--success); }
+    .settings-msg.error { display: block; background: var(--error-bg); color: var(--error); }
+    .back-link {
+      display: block; text-align: center; margin-top: 20px;
+      font-size: 0.85rem; color: var(--text-secondary); text-decoration: none;
+    }
+    .back-link:hover { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="settings-page">
+    <div class="settings-card">
+      <h2>⚙️ 设置</h2>
+      <p class="subtitle">配置千问 API 密钥后即可使用</p>
+
+      <div class="settings-field">
+        <label for="apiKey">API 密钥</label>
+        <div class="input-row">
+          <input type="password" id="apiKey" placeholder="sk-..." autocomplete="off">
+          <button class="toggle-pw" id="togglePw" title="显示/隐藏">👁</button>
+        </div>
+        <div class="hint">
+          <a href="https://bailian.console.aliyun.com/" target="_blank">获取 API Key →</a>
+        </div>
+      </div>
+
+      <div class="settings-field">
+        <label for="model">模型名称</label>
+        <input type="text" id="model" placeholder="qwen3.5-omni-plus">
+        <div class="hint">支持千问 VL 系列，如 qwen-vl-plus、qwen-vl-max</div>
+      </div>
+
+      <div class="settings-field">
+        <label for="baseUrl">API 地址</label>
+        <input type="text" id="baseUrl" placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1">
+        <div class="hint">默认千问官方地址，一般无需修改</div>
+      </div>
+
+      <button class="btn-save" id="btnSave">保存配置</button>
+      <div class="settings-msg" id="settingsMsg"></div>
+
+      <a href="/" class="back-link">← 返回首页</a>
+    </div>
+  </div>
+
+  <script>
+    const $ = sel => document.querySelector(sel);
+
+    // 加载当前配置
+    async function loadSettings() {
+      try {
+        const resp = await fetch("/api/settings");
+        const data = await resp.json();
+        $("#apiKey").value = data.api_key_masked || "";
+        $("#model").value = data.model || "qwen3.5-omni-plus";
+        $("#baseUrl").value = data.base_url || "https://dashscope.aliyuncs.com/compatible-mode/v1";
+      } catch {}
+    }
+    loadSettings();
+
+    // 密码显示切换
+    $("#togglePw").addEventListener("click", () => {
+      const inp = $("#apiKey");
+      const isPassword = inp.type === "password";
+      inp.type = isPassword ? "text" : "password";
+      $("#togglePw").textContent = isPassword ? "🙈" : "👁";
+    });
+
+    function showMsg(text, type) {
+      const el = $("#settingsMsg");
+      el.textContent = text;
+      el.className = `settings-msg ${type}`;
+    }
+
+    // 保存
+    $("#btnSave").addEventListener("click", async () => {
+      const apiKey = $("#apiKey").value.trim();
+      if (!apiKey) { showMsg("请输入 API 密钥", "error"); return; }
+
+      const btn = $("#btnSave");
+      btn.disabled = true;
+      btn.textContent = "保存中...";
+      showMsg("", ""); // clear
+
+      try {
+        const resp = await fetch("/api/settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            api_key: apiKey,
+            model: $("#model").value.trim(),
+            base_url: $("#baseUrl").value.trim(),
+          }),
+        });
+        const data = await resp.json();
+        if (resp.ok && data.success) {
+          showMsg("✅ 配置已保存，即将跳转...", "success");
+          setTimeout(() => { window.location.href = "/"; }, 1200);
+        } else {
+          showMsg(data.error || "保存失败", "error");
+          btn.disabled = false;
+          btn.textContent = "保存配置";
+        }
+      } catch (err) {
+        showMsg("网络错误，请重试", "error");
+        btn.disabled = false;
+        btn.textContent = "保存配置";
+      }
+    });
+  </script>
+</body>
+</html>
