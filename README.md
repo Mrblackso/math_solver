@@ -1,4 +1,4 @@
-<video src="https://raw.githubusercontent.com/Mrblackso/math_solver/main/演示视频.mp4" controls width="100%"></video>
+https://github.com/Mrblackso/math_solver/blob/main/演示视频.mp4
 
 # 战胜高数！！！— 数学题解算器 🧮
 
