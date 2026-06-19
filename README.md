@@ -1,3 +1,5 @@
+<video src="https://raw.githubusercontent.com/Mrblackso/math_solver/main/演示视频.mp4" controls width="100%"></video>
+
 # 战胜高数！！！— 数学题解算器 🧮
 
 上传数学题图片（或输入文字），AI 自动识别题目并流式生成详细解答。支持追问，LaTeX 公式渲染。
