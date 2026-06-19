@@ -126,13 +126,14 @@ def solve_problem_stream(recognized_text: str):
     messages = [{
         "role": "user",
         "content": (
-            "你是一位经验丰富的大学数学教授。请逐步解答以下数学题目。\n\n"
+            "请逐步解答以下数学题目。\n\n"
             "要求：\n"
-            "1. 每一步推理都要有清晰的文字解释\n"
-            + LATEX_HINT + "\n"
-            "3. 最终答案用 $\\boxed{...}$ 标出\n"
-            "4. 如果题目包含多个小问，请用（1）、（2）等分别标注\n"
-            "5. 用中文回答\n\n"
+            "1. 直接开始解答，不要寒暄，不要说你是什么角色，不要评价题目难易\n"
+            "2. 每一步推理都要有清晰的文字解释\n"
+            "3. " + LATEX_HINT + "\n"
+            "4. 最终答案用 $\\boxed{...}$ 标出\n"
+            "5. 如果题目包含多个小问，请用（1）、（2）等分别标注\n"
+            "6. 用中文回答\n\n"
             f"题目：\n---\n{recognized_text}\n---"
         ),
     }]
@@ -145,12 +146,12 @@ def chat_reply_stream(recognized_text: str, solution: str, history: list[dict], 
     image_path: 追问时附带的图片路径（可选），会与文字一起发送给模型
     """
     system_msg = (
-        "你是一位耐心细致的数学辅导老师。你正在帮助一位学生深入理解一道数学题。\n\n"
         f"原始题目：\n{recognized_text}\n\n"
         f"之前的完整解答：\n{solution}\n\n"
-        "学生正在针对这道题提问。如果学生发送了图片，请结合图片内容回答。请用中文回答。"
+        "学生正在针对这道题追问。如果学生发送了图片，请结合图片内容回答。\n"
+        "注意：直接回答，不要寒暄，不要说你是什么角色，不要评价问题好坏。"
         + LATEX_HINT + "\n"
-        "如果学生问的是不相关的问题，请礼貌地将话题引导回题目本身。"
+        "如果学生问的是不相关的问题，请简短引导回题目本身。"
     )
     messages = [{"role": "system", "content": system_msg}]
     for msg in history[-20:]:
@@ -162,25 +163,26 @@ def chat_reply_stream(recognized_text: str, solution: str, history: list[dict], 
 # 保留同步版本作为 fallback
 def solve_problem(recognized_text: str) -> str:
     return _call_api([{"role": "user", "content": (
-        "你是一位经验丰富的大学数学教授。请逐步解答以下数学题目。\n\n"
+        "请逐步解答以下数学题目。\n\n"
         "要求：\n"
-        "1. 每一步推理都要有清晰的文字解释\n"
-        + LATEX_HINT + "\n"
-        "3. 最终答案用 $\\boxed{...}$ 标出\n"
-        "4. 如果题目包含多个小问，请用（1）、（2）等分别标注\n"
-        "5. 用中文回答\n\n"
+        "1. 直接开始解答，不要寒暄，不要说你是什么角色，不要评价题目难易\n"
+        "2. 每一步推理都要有清晰的文字解释\n"
+        "3. " + LATEX_HINT + "\n"
+        "4. 最终答案用 $\\boxed{...}$ 标出\n"
+        "5. 如果题目包含多个小问，请用（1）、（2）等分别标注\n"
+        "6. 用中文回答\n\n"
         f"题目：\n---\n{recognized_text}\n---"
     )}], temperature=0.3)
 
 
 def chat_reply(recognized_text: str, solution: str, history: list[dict], new_message: str, image_path: str = None) -> str:
     system_msg = (
-        "你是一位耐心细致的数学辅导老师。你正在帮助一位学生深入理解一道数学题。\n\n"
         f"原始题目：\n{recognized_text}\n\n"
         f"之前的完整解答：\n{solution}\n\n"
-        "学生正在针对这道题提问。如果学生发送了图片，请结合图片内容回答。请用中文回答。"
+        "学生正在针对这道题追问。如果学生发送了图片，请结合图片内容回答。\n"
+        "注意：直接回答，不要寒暄，不要说你是什么角色，不要评价问题好坏。"
         + LATEX_HINT + "\n"
-        "如果学生问的是不相关的问题，请礼貌地将话题引导回题目本身。"
+        "如果学生问的是不相关的问题，请简短引导回题目本身。"
     )
     messages = [{"role": "system", "content": system_msg}]
     for msg in history[-20:]:
