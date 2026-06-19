@@ -12,6 +12,7 @@ from services.qwen_client import (
     chat_reply_stream,
     solve_problem,
     chat_reply,
+    _build_user_content,
 )
 from services.session_manager import SessionManager
 
@@ -76,6 +77,8 @@ def api_solve():
     if file.filename == "":
         return jsonify({"error": "请选择图片文件"}), 400
 
+    user_text = (request.form.get("text") or "").strip()
+
     ext = os.path.splitext(file.filename or "image.png")[1] or ".png"
     with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
         file.save(tmp.name)
@@ -88,7 +91,7 @@ def api_solve():
 
             # Phase 1: 识别题目
             yield _sse_event({"type": "phase", "message": "识别题目中..."})
-            recognized_text = recognize_image(tmp_path)
+            recognized_text = recognize_image(tmp_path, user_text=user_text)
 
             if not recognized_text or len(recognized_text.strip()) < 5:
                 yield _sse_event({"type": "error", "message": "未检测到数学题目"})
@@ -176,10 +179,25 @@ def api_solve_text():
 
 @app.route("/api/chat", methods=["POST"])
 def api_chat():
-    """追问 → 流式回复（SSE）"""
-    data = request.get_json(silent=True) or {}
-    session_id = data.get("session_id", "")
-    message = (data.get("message", "") or "").strip()
+    """追问 → 流式回复（SSE）。支持 JSON（纯文本）和 multipart/form-data（图片+文字）"""
+    image_path = None
+
+    if request.content_type and "multipart/form-data" in request.content_type:
+        # 图片 + 文字模式
+        session_id = (request.form.get("session_id") or "").strip()
+        message = (request.form.get("message") or "").strip()
+        if "image" in request.files:
+            file = request.files["image"]
+            if file.filename:
+                ext = os.path.splitext(file.filename or "image.png")[1] or ".png"
+                tmp_img = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
+                file.save(tmp_img.name)
+                image_path = tmp_img.name
+    else:
+        # 纯文本 JSON 模式（向后兼容）
+        data = request.get_json(silent=True) or {}
+        session_id = data.get("session_id", "")
+        message = (data.get("message", "") or "").strip()
 
     if not session_id:
         return jsonify({"error": "缺少会话 ID"}), 400
@@ -200,12 +218,14 @@ def api_chat():
                 solution=session.solution,
                 history=session.chat_history,
                 new_message=message,
+                image_path=image_path,
             ):
                 full_reply += chunk
                 yield _sse_event({"type": "chunk", "content": chunk})
 
-            # 存入历史
-            session.chat_history.append({"role": "user", "content": message})
+            # 存入历史（图片消息以多模态数组存储）
+            user_content = _build_user_content(message, image_path)
+            session.chat_history.append({"role": "user", "content": user_content})
             session.chat_history.append({"role": "assistant", "content": full_reply})
             if len(session.chat_history) > 20:
                 session.chat_history = session.chat_history[-20:]
@@ -216,6 +236,12 @@ def api_chat():
             pass
         except Exception as e:
             yield from _error_handler(e)
+        finally:
+            if image_path:
+                try:
+                    os.unlink(image_path)
+                except OSError:
+                    pass
 
     return Response(
         stream_with_context(generate()),

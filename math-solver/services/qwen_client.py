@@ -21,6 +21,17 @@ def _image_to_data_url(image_path: str) -> str:
     return f"data:image/{mime};base64,{data}"
 
 
+def _build_user_content(text: str, image_path: str = None):
+    """构建用户消息 content：纯文本或 图片+文本 多模态数组"""
+    if image_path:
+        data_url = _image_to_data_url(image_path)
+        return [
+            {"type": "image_url", "image_url": {"url": data_url}},
+            {"type": "text", "text": text},
+        ]
+    return text
+
+
 def _call_api(messages: list[dict], temperature: float = 0.3) -> str:
     """同步调用千问 API，返回完整回复"""
     url = DASHSCOPE_BASE_URL.rstrip("/") + "/chat/completions"
@@ -75,18 +86,24 @@ def _call_api_stream(messages: list[dict], temperature: float = 0.3):
             continue
 
 
-def recognize_image(image_path: str) -> str:
-    """发送图片到 VL 模型，识别数学题目（同步，较快不做流式）"""
+def recognize_image(image_path: str, user_text: str = "") -> str:
+    """发送图片到 VL 模型，识别数学题目（同步，较快不做流式）
+
+    user_text: 用户对图片的额外说明或提问，如"只做第2小问"
+    """
     data_url = _image_to_data_url(image_path)
+    base_prompt = (
+        "请仔细识别图片中的所有数学内容，包括题目文字、数学公式、符号等。\n"
+        + LATEX_HINT + "\n"
+        "只做识别和转写，不要解答。用中文输出。"
+    )
+    if user_text:
+        base_prompt += f"\n\n【用户附加说明】\n{user_text}\n\n请结合以上说明进行识别和转写。"
     messages = [{
         "role": "user",
         "content": [
             {"type": "image_url", "image_url": {"url": data_url}},
-            {"type": "text", "text": (
-                "请仔细识别图片中的所有数学内容，包括题目文字、数学公式、符号等。\n"
-                + LATEX_HINT + "\n"
-                "只做识别和转写，不要解答。用中文输出。"
-            )},
+            {"type": "text", "text": base_prompt},
         ],
     }]
     return _call_api(messages, temperature=0.1)
@@ -110,19 +127,23 @@ def solve_problem_stream(recognized_text: str):
     yield from _call_api_stream(messages, temperature=0.3)
 
 
-def chat_reply_stream(recognized_text: str, solution: str, history: list[dict], new_message: str):
-    """流式聊天回复，逐 chunk yield"""
+def chat_reply_stream(recognized_text: str, solution: str, history: list[dict], new_message: str, image_path: str = None):
+    """流式聊天回复，逐 chunk yield
+
+    image_path: 追问时附带的图片路径（可选），会与文字一起发送给模型
+    """
     system_msg = (
         "你是一位耐心细致的数学辅导老师。你正在帮助一位学生深入理解一道数学题。\n\n"
         f"原始题目：\n{recognized_text}\n\n"
         f"之前的完整解答：\n{solution}\n\n"
-        "学生正在针对这道题提问。请用中文回答。" + LATEX_HINT + "\n"
+        "学生正在针对这道题提问。如果学生发送了图片，请结合图片内容回答。请用中文回答。"
+        + LATEX_HINT + "\n"
         "如果学生问的是不相关的问题，请礼貌地将话题引导回题目本身。"
     )
     messages = [{"role": "system", "content": system_msg}]
     for msg in history[-20:]:
         messages.append(msg)
-    messages.append({"role": "user", "content": new_message})
+    messages.append({"role": "user", "content": _build_user_content(new_message, image_path)})
     yield from _call_api_stream(messages, temperature=0.5)
 
 
@@ -140,16 +161,17 @@ def solve_problem(recognized_text: str) -> str:
     )}], temperature=0.3)
 
 
-def chat_reply(recognized_text: str, solution: str, history: list[dict], new_message: str) -> str:
+def chat_reply(recognized_text: str, solution: str, history: list[dict], new_message: str, image_path: str = None) -> str:
     system_msg = (
         "你是一位耐心细致的数学辅导老师。你正在帮助一位学生深入理解一道数学题。\n\n"
         f"原始题目：\n{recognized_text}\n\n"
         f"之前的完整解答：\n{solution}\n\n"
-        "学生正在针对这道题提问。请用中文回答。" + LATEX_HINT + "\n"
+        "学生正在针对这道题提问。如果学生发送了图片，请结合图片内容回答。请用中文回答。"
+        + LATEX_HINT + "\n"
         "如果学生问的是不相关的问题，请礼貌地将话题引导回题目本身。"
     )
     messages = [{"role": "system", "content": system_msg}]
     for msg in history[-20:]:
         messages.append(msg)
-    messages.append({"role": "user", "content": new_message})
+    messages.append({"role": "user", "content": _build_user_content(new_message, image_path)})
     return _call_api(messages, temperature=0.5)

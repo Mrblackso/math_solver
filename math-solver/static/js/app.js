@@ -6,6 +6,8 @@ const STATE = {
   isSolving: false,
   isSending: false,
   abortController: null,
+  chatImageFile: null,       // 追问时附加的图片
+  chatImageDataUrl: null,    // 追问图片的 data URL（用于在聊天中回显）
 };
 
 /* ====== DOM 引用 ====== */
@@ -126,6 +128,7 @@ function switchMode(mode) {
     uploadZone.style.display = "";
     textInputArea.style.display = "none";
     textInputArea.classList.add("hidden");
+    $("#solveQuestion").classList.remove("hidden");
     if (STATE.imageFile) {
       preview.classList.remove("hidden");
       uploadZone.classList.add("has-file");
@@ -137,6 +140,7 @@ function switchMode(mode) {
     textInputArea.style.display = "";
     textInputArea.classList.remove("hidden");
     preview.classList.add("hidden");
+    $("#solveQuestion").classList.add("hidden");
   }
   updateSolveButton();
   hideError();
@@ -226,6 +230,8 @@ async function handleSolve() {
   if (STATE.inputMode === "image") {
     body = new FormData();
     body.append("image", STATE.imageFile);
+    const questionText = ($("#solveQuestion").value || "").trim();
+    if (questionText) body.append("text", questionText);
   } else {
     body = JSON.stringify({ text: textInputArea.value.trim() });
   }
@@ -343,6 +349,11 @@ const chatInput = $("#chatInput");
 const btnSend = $("#btnSend");
 const btnStopChat = $("#btnStopChat");
 const charCount = $("#charCount");
+const btnAttachImage = $("#btnAttachImage");
+const chatImageInput = $("#chatImageInput");
+const chatImagePreview = $("#chatImagePreview");
+const chatPreviewImg = $("#chatPreviewImg");
+const btnRemoveChatImage = $("#btnRemoveChatImage");
 
 /** 智能滚动：仅当用户在底部附近（距底部 60px 内）才自动滚动 */
 function scrollChatToBottom(force = false) {
@@ -359,6 +370,7 @@ function showChatPanel() {
   chatMessages.querySelectorAll(".chat-msg, .chat-typing").forEach(m => m.remove());
   chatEmpty.classList.remove("hidden");
   chatInput.value = "";
+  removeChatImage();
   updateCharCount();
   btnSend.disabled = true;
 }
@@ -368,6 +380,7 @@ function resetChat() {
   chatMessages.querySelectorAll(".chat-msg, .chat-typing").forEach(m => m.remove());
   chatEmpty.classList.remove("hidden");
   chatInput.value = "";
+  removeChatImage();
   updateCharCount();
 }
 
@@ -389,6 +402,42 @@ chatInput.addEventListener("keydown", (e) => {
   }
 });
 
+/* 追问图片附件 */
+btnAttachImage.addEventListener("click", () => chatImageInput.click());
+chatImageInput.addEventListener("change", () => {
+  if (chatImageInput.files?.length) selectChatImage(chatImageInput.files[0]);
+});
+btnRemoveChatImage.addEventListener("click", removeChatImage);
+
+function selectChatImage(file) {
+  const validTypes = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp"];
+  if (!validTypes.includes(file.type)) {
+    alert("请上传图片文件（JPG、PNG、GIF、WebP）");
+    return;
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    alert("图片文件不能超过 20MB");
+    return;
+  }
+  STATE.chatImageFile = file;
+  STATE.chatImageDataUrl = URL.createObjectURL(file);
+  chatPreviewImg.src = STATE.chatImageDataUrl;
+  chatImagePreview.classList.remove("hidden");
+  btnSend.disabled = false; // 有图片时允许发送
+}
+
+function removeChatImage() {
+  STATE.chatImageFile = null;
+  if (STATE.chatImageDataUrl) {
+    URL.revokeObjectURL(STATE.chatImageDataUrl);
+    STATE.chatImageDataUrl = null;
+  }
+  chatImagePreview.classList.add("hidden");
+  chatPreviewImg.src = "";
+  chatImageInput.value = "";
+  btnSend.disabled = !chatInput.value.trim() || STATE.isSending;
+}
+
 btnSend.addEventListener("click", handleSend);
 
 async function handleSend() {
@@ -400,9 +449,13 @@ async function handleSend() {
   btnSend.classList.add("hidden");
   btnStopChat.classList.remove("hidden");
   chatInput.disabled = true;
+  btnAttachImage.disabled = true;  // 发送中不允许改图片
 
-  appendMessage("user", message);
+  const chatImageFile = STATE.chatImageFile;        // 先保存引用
+  const chatImageDataUrl = STATE.chatImageDataUrl;  // 再清除状态
+  appendMessage("user", message, chatImageDataUrl);
   chatInput.value = "";
+  removeChatImage();
   updateCharCount();
 
   // 创建空消息占位
@@ -414,11 +467,25 @@ async function handleSend() {
 
   STATE.abortController = new AbortController();
 
-  try {
-    const resp = await fetch("/api/chat", {
+  // 根据是否有图片选择请求格式
+  let fetchOptions;
+  if (chatImageFile) {
+    const formData = new FormData();
+    formData.append("session_id", STATE.sessionId);
+    formData.append("message", message);
+    formData.append("image", chatImageFile);
+    fetchOptions = { method: "POST", body: formData };
+  } else {
+    fetchOptions = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ session_id: STATE.sessionId, message }),
+    };
+  }
+
+  try {
+    const resp = await fetch("/api/chat", {
+      ...fetchOptions,
       signal: STATE.abortController.signal,
     });
 
@@ -460,6 +527,7 @@ async function handleSend() {
     btnSend.classList.remove("hidden");
     btnStopChat.classList.add("hidden");
     chatInput.disabled = false;
+    btnAttachImage.disabled = false;
     chatInput.focus();
   }
 }
@@ -479,15 +547,25 @@ function stopChatGeneration() {
 
 btnStopChat.addEventListener("click", stopChatGeneration);
 
-function appendMessage(role, content) {
+function appendMessage(role, content, imageUrl = null) {
   chatEmpty.classList.add("hidden");
   const div = document.createElement("div");
   div.className = `chat-msg ${role}`;
-  if (role === "assistant") {
+  if (role === "user") {
+    // 用户消息：可选图片 + 文字
+    if (imageUrl) {
+      const img = document.createElement("img");
+      img.src = imageUrl;
+      img.className = "chat-msg-image";
+      img.alt = "追问图片";
+      div.appendChild(img);
+    }
+    const textSpan = document.createElement("span");
+    textSpan.textContent = content;
+    div.appendChild(textSpan);
+  } else {
     div.innerHTML = renderMarkdownWithLatex(content);
     typesetElement(div);
-  } else {
-    div.textContent = content;
   }
   chatMessages.appendChild(div);
   scrollChatToBottom(true);
@@ -512,6 +590,7 @@ $("#btnReset").addEventListener("click", async () => {
   if (previewImg.src) { URL.revokeObjectURL(previewImg.src); previewImg.src = ""; }
   fileInput.value = "";
   textInputArea.value = "";
+  $("#solveQuestion").value = "";
   btnSolve.disabled = true;
   hideError();
   showCancelButton(false);
