@@ -103,7 +103,7 @@ def api_solve():
             yield _sse_event({"type": "phase", "message": "生成解答中..."})
 
             full_solution = ""
-            for chunk in solve_problem_stream(recognized_text):
+            for chunk in solve_problem_stream(recognized_text, user_text=user_text):
                 full_solution += chunk
                 yield _sse_event({"type": "chunk", "content": chunk})
 

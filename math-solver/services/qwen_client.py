@@ -121,8 +121,16 @@ def recognize_image(image_path: str, user_text: str = "") -> str:
     return _call_api(messages, temperature=0.1)
 
 
-def solve_problem_stream(recognized_text: str):
-    """流式生成解答，逐 chunk yield"""
+def solve_problem_stream(recognized_text: str, user_text: str = ""):
+    """流式生成解答，逐 chunk yield
+
+    user_text: 用户对图片的额外说明或可选项（如 "A. 2  B. 3  C. 4  D. 5"）
+    """
+    # 将用户附加文本（可选项/说明）与识别结果合并为完整题目
+    problem_text = recognized_text
+    if user_text:
+        problem_text += f"\n\n【用户提供的可选项/附加说明】\n{user_text}"
+
     messages = [{
         "role": "user",
         "content": (
@@ -133,8 +141,9 @@ def solve_problem_stream(recognized_text: str):
             "3. " + LATEX_HINT + "\n"
             "4. 最终答案用 $\\boxed{...}$ 标出\n"
             "5. 如果题目包含多个小问，请用（1）、（2）等分别标注\n"
-            "6. 用中文回答\n\n"
-            f"题目：\n---\n{recognized_text}\n---"
+            "6. 如果题目附带了可选项（如A/B/C/D），必须从给定的可选项中选择最终答案，并在解答中明确标出所选选项\n"
+            "7. 用中文回答\n\n"
+            f"题目：\n---\n{problem_text}\n---"
         ),
     }]
     yield from _call_api_stream(messages, temperature=0.3)
