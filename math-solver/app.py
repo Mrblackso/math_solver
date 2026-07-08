@@ -186,13 +186,6 @@ def api_chat():
         # 图片 + 文字模式
         session_id = (request.form.get("session_id") or "").strip()
         message = (request.form.get("message") or "").strip()
-        if "image" in request.files:
-            file = request.files["image"]
-            if file.filename:
-                ext = os.path.splitext(file.filename or "image.png")[1] or ".png"
-                tmp_img = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
-                file.save(tmp_img.name)
-                image_path = tmp_img.name
     else:
         # 纯文本 JSON 模式（向后兼容）
         data = request.get_json(silent=True) or {}
@@ -201,7 +194,12 @@ def api_chat():
 
     if not session_id:
         return jsonify({"error": "缺少会话 ID"}), 400
-    if not message and not image_path:
+    if not message and not (
+        request.content_type
+        and "multipart/form-data" in request.content_type
+        and "image" in request.files
+        and request.files["image"].filename
+    ):
         return jsonify({"error": "请输入消息或上传图片"}), 400
     if len(message) > 4000:
         return jsonify({"error": "消息过长"}), 400
@@ -209,6 +207,16 @@ def api_chat():
     session = session_manager.get(session_id)
     if not session:
         return jsonify({"error": "会话已过期，请重新上传"}), 404
+
+    # 先验证 session，再保存图片（避免 session 无效时泄漏临时文件）
+    if request.content_type and "multipart/form-data" in request.content_type:
+        if "image" in request.files:
+            file = request.files["image"]
+            if file.filename:
+                ext = os.path.splitext(file.filename or "image.png")[1] or ".png"
+                tmp_img = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
+                file.save(tmp_img.name)
+                image_path = tmp_img.name
 
     def generate():
         try:
@@ -359,4 +367,5 @@ if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
     print("\n== 数学题解算器 启动中...")
     print("   打开浏览器访问: http://localhost:5000\n")
-    app.run(host="127.0.0.1", port=5000, debug=True, threaded=True)
+    from waitress import serve
+    serve(app, host="127.0.0.1", port=5000, threads=8)

@@ -58,8 +58,11 @@ def _call_api(messages: list[dict], temperature: float = 0.3) -> str:
         "max_tokens": 8192,
     }
     resp = requests.post(url, json=payload, headers=headers, timeout=API_TIMEOUT_SECONDS)
-    resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"]
+    try:
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"]
+    finally:
+        resp.close()
 
 
 def _call_api_stream(messages: list[dict], temperature: float = 0.3):
@@ -77,25 +80,28 @@ def _call_api_stream(messages: list[dict], temperature: float = 0.3):
         "stream": True,
     }
     resp = requests.post(url, json=payload, headers=headers, timeout=API_TIMEOUT_SECONDS, stream=True)
-    resp.raise_for_status()
+    try:
+        resp.raise_for_status()
 
-    for line in resp.iter_lines():
-        if not line:
-            continue
-        text = line.decode("utf-8").strip()
-        if not text.startswith("data:"):
-            continue
-        data_str = text[5:].strip()
-        if data_str == "[DONE]":
-            break
-        try:
-            chunk = json.loads(data_str)
-            delta = chunk.get("choices", [{}])[0].get("delta", {})
-            content = delta.get("content", "")
-            if content:
-                yield content
-        except (json.JSONDecodeError, KeyError, IndexError):
-            continue
+        for line in resp.iter_lines():
+            if not line:
+                continue
+            text = line.decode("utf-8").strip()
+            if not text.startswith("data:"):
+                continue
+            data_str = text[5:].strip()
+            if data_str == "[DONE]":
+                break
+            try:
+                chunk = json.loads(data_str)
+                delta = chunk.get("choices", [{}])[0].get("delta", {})
+                content = delta.get("content", "")
+                if content:
+                    yield content
+            except (json.JSONDecodeError, KeyError, IndexError):
+                continue
+    finally:
+        resp.close()
 
 
 def recognize_image(image_path: str, user_text: str = "") -> str:
