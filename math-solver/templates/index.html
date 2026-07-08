@@ -44,7 +44,7 @@
 
         <!-- 图片上传区 -->
         <div class="upload-zone" id="uploadZone">
-          <input type="file" id="fileInput" accept="image/*" hidden>
+          <input type="file" id="fileInput" accept="image/*" multiple hidden>
           <div class="upload-icon">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -53,7 +53,7 @@
             </svg>
           </div>
           <p class="upload-text">拖拽图片到这里，或 <span class="upload-link">点击选择文件</span></p>
-          <p class="upload-hint">支持 JPG、PNG、GIF、WebP，最大 20MB</p>
+          <p class="upload-hint">支持 JPG、PNG、GIF、WebP，最多 5 张，每张最大 20MB</p>
         </div>
 
         <!-- 文本输入区 -->
@@ -64,11 +64,8 @@
           rows="8"
         ></textarea>
 
-        <!-- 图片预览 -->
-        <div class="preview hidden" id="preview">
-          <img id="previewImg" src="" alt="预览">
-          <button class="preview-remove" id="btnRemove" title="移除图片">&times;</button>
-        </div>
+        <!-- 图片预览（多图网格） -->
+        <div class="preview-grid hidden" id="previewGrid"></div>
 
         <!-- 图片模式下的附加提问 -->
         <textarea

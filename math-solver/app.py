@@ -2,6 +2,7 @@
 
 import os
 import json
+import base64
 import tempfile
 from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context, redirect
 
@@ -69,29 +70,49 @@ def index():
 
 @app.route("/api/solve", methods=["POST"])
 def api_solve():
-    """上传图片 → 识别 → 流式解答（SSE）"""
-    if "image" not in request.files:
+    """上传图片（最多5张，base64 JSON 或 multipart）→ 识别 → 流式解答（SSE）"""
+    tmp_paths = []
+    user_text = ""
+
+    if not request.is_json:
+        return jsonify({"error": "不支持的请求格式"}), 400
+
+    data = request.get_json(silent=True) or {}
+    data_urls = data.get("images", [])
+    if not data_urls:
+        return jsonify({"error": "请上传图片文件"}), 400
+    data_urls = data_urls[:5]
+    user_text = (data.get("text") or "").strip()
+
+    # 将 base64 data URL 解码保存为临时文件
+    for data_url in data_urls:
+        try:
+            header, b64 = data_url.split(",", 1)
+            ext = ".png"
+            if "image/" in header:
+                mime = header.split("image/")[1].split(";")[0]
+                ext = "." + mime if mime else ".png"
+            img_data = base64.b64decode(b64)
+            tmp = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
+            tmp.write(img_data)
+            tmp.close()
+            tmp_paths.append(tmp.name)
+        except Exception:
+            continue
+
+    if not tmp_paths:
         return jsonify({"error": "请上传图片文件"}), 400
 
-    file = request.files["image"]
-    if file.filename == "":
-        return jsonify({"error": "请选择图片文件"}), 400
-
-    user_text = (request.form.get("text") or "").strip()
-
-    ext = os.path.splitext(file.filename or "image.png")[1] or ".png"
-    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
-        file.save(tmp.name)
-        tmp_path = tmp.name
-
     def generate():
-        nonlocal tmp_path
+        nonlocal tmp_paths
         try:
-            _resize_image(tmp_path)
+            # 逐张压缩
+            for p in tmp_paths:
+                _resize_image(p)
 
             # Phase 1: 识别题目
             yield _sse_event({"type": "phase", "message": "识别题目中..."})
-            recognized_text = recognize_image(tmp_path, user_text=user_text)
+            recognized_text = recognize_image(tmp_paths, user_text=user_text)
 
             if not recognized_text or len(recognized_text.strip()) < 5:
                 yield _sse_event({"type": "error", "message": "未检测到数学题目"})
@@ -119,10 +140,11 @@ def api_solve():
         except Exception as e:
             yield from _error_handler(e)
         finally:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
+            for p in tmp_paths:
+                try:
+                    os.unlink(p)
+                except OSError:
+                    pass
 
     return Response(
         stream_with_context(generate()),
@@ -366,6 +388,6 @@ if __name__ == "__main__":
     import sys
     sys.stdout.reconfigure(encoding="utf-8")
     print("\n== 数学题解算器 启动中...")
-    print("   打开浏览器访问: http://localhost:5000\n")
+    print("   打开浏览器访问: http://localhost:5001\n")
     from waitress import serve
-    serve(app, host="127.0.0.1", port=5000, threads=8)
+    serve(app, host="127.0.0.1", port=5001, threads=8)

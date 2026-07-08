@@ -1,7 +1,8 @@
 /* ====== 状态 ====== */
 const STATE = {
   sessionId: localStorage.getItem("math_solver_session") || null,
-  imageFile: null,
+  imageFiles: [],            // 求解图片列表（最多5张）
+  imageDataUrls: [],         // 对应 data URL 用于预览
   inputMode: "image",
   isSolving: false,
   isSending: false,
@@ -105,15 +106,48 @@ async function typesetElement(el) {
   }
 }
 
+/* ====== 节流渲染器：避免 MathJax 频繁重排导致卡顿/崩溃 ====== */
+function createStreamRenderer(targetEl, renderFn) {
+  let rafId = null;
+  let latestText = "";
+  let lastRenderTime = 0;
+  const MIN_INTERVAL = 120; // ms，两次渲染最小间隔
+
+  return function render(text, isFinal = false) {
+    latestText = text;
+    if (isFinal) {
+      // 最终渲染：立即执行，强制等待 MathJax 完成
+      if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+      flush();
+      return;
+    }
+    // 节流：用 requestAnimationFrame 批处理
+    if (rafId) return; // 已有待渲染帧
+    const elapsed = performance.now() - lastRenderTime;
+    if (elapsed >= MIN_INTERVAL) {
+      flush();
+    } else {
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        flush();
+      });
+    }
+  };
+
+  function flush() {
+    lastRenderTime = performance.now();
+    targetEl.innerHTML = renderFn(latestText);
+    typesetElement(targetEl);
+  }
+}
+
 /* ====== 输入模式切换 ====== */
 const tabImage = $("#tabImage");
 const tabText = $("#tabText");
 const uploadZone = $("#uploadZone");
 const fileInput = $("#fileInput");
 const textInputArea = $("#textInputArea");
-const preview = $("#preview");
-const previewImg = $("#previewImg");
-const btnRemove = $("#btnRemove");
+const previewGrid = $("#previewGrid");
 const btnSolve = $("#btnSolve");
 const uploadError = $("#uploadError");
 
@@ -129,8 +163,8 @@ function switchMode(mode) {
     textInputArea.style.display = "none";
     textInputArea.classList.add("hidden");
     $("#solveQuestion").classList.remove("hidden");
-    if (STATE.imageFile) {
-      preview.classList.remove("hidden");
+    if (STATE.imageFiles.length > 0) {
+      previewGrid.classList.remove("hidden");
       uploadZone.classList.add("has-file");
     }
   } else {
@@ -139,7 +173,7 @@ function switchMode(mode) {
     uploadZone.style.display = "none";
     textInputArea.style.display = "";
     textInputArea.classList.remove("hidden");
-    preview.classList.add("hidden");
+    previewGrid.classList.add("hidden");
     $("#solveQuestion").classList.add("hidden");
   }
   updateSolveButton();
@@ -148,13 +182,25 @@ function switchMode(mode) {
 
 function updateSolveButton() {
   if (STATE.inputMode === "image") {
-    btnSolve.disabled = !STATE.imageFile || STATE.isSolving;
+    btnSolve.disabled = STATE.imageFiles.length === 0 || STATE.isSolving;
   } else {
     btnSolve.disabled = !textInputArea.value.trim() || STATE.isSolving;
   }
 }
 
-/* ====== 图片上传逻辑 ====== */
+/* ====== 图片上传逻辑（多图，最多5张） ====== */
+const MAX_IMAGES = 5;
+const VALID_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp"];
+const VALID_IMAGE_EXTS = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"];
+const MAX_FILE_SIZE = 20 * 1024 * 1024;
+
+function isValidImage(file) {
+  // 先检查 MIME，再检查扩展名（Windows 上某些图片 MIME 可能为空）
+  if (VALID_IMAGE_TYPES.includes(file.type)) return true;
+  const ext = "." + file.name.split(".").pop().toLowerCase();
+  return VALID_IMAGE_EXTS.includes(ext);
+}
+
 uploadZone.addEventListener("click", () => fileInput.click());
 uploadZone.addEventListener("dragover", (e) => { e.preventDefault(); uploadZone.classList.add("drag-over"); });
 uploadZone.addEventListener("dragleave", () => uploadZone.classList.remove("drag-over"));
@@ -162,38 +208,83 @@ uploadZone.addEventListener("drop", (e) => {
   e.preventDefault();
   uploadZone.classList.remove("drag-over");
   const files = e.dataTransfer?.files;
-  if (files?.length) selectFile(files[0]);
+  if (files?.length) addFiles(files);
 });
 fileInput.addEventListener("change", () => {
-  if (fileInput.files?.length) selectFile(fileInput.files[0]);
+  if (fileInput.files?.length) addFiles(fileInput.files);
+  fileInput.value = "";  // 清空以便重复选择同一文件
 });
 
-function selectFile(file) {
-  const validTypes = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp"];
-  if (!validTypes.includes(file.type)) {
-    showError("请上传图片文件（JPG、PNG、GIF、WebP）");
+function addFiles(fileList) {
+  const remaining = MAX_IMAGES - STATE.imageFiles.length;
+  if (remaining <= 0) {
+    showError(`最多只能上传 ${MAX_IMAGES} 张图片`);
     return;
   }
-  if (file.size > 20 * 1024 * 1024) {
-    showError("图片文件不能超过 20MB");
+
+  let added = 0;
+  let skipped = 0;
+  for (const file of fileList) {
+    if (added >= remaining) break;
+    if (!isValidImage(file)) { skipped++; continue; }
+    if (file.size > MAX_FILE_SIZE) {
+      showError(`"${file.name}" 超过 20MB 限制，已跳过`);
+      continue;
+    }
+    STATE.imageFiles.push(file);
+    STATE.imageDataUrls.push(URL.createObjectURL(file));
+    added++;
+  }
+
+  if (added === 0 && skipped > 0) {
+    showError("请上传 JPG、PNG、GIF、WebP 格式的图片文件");
     return;
   }
-  STATE.imageFile = file;
-  previewImg.src = URL.createObjectURL(file);
-  preview.classList.remove("hidden");
-  uploadZone.classList.add("has-file");
-  hideError();
+
+  if (STATE.imageFiles.length > 0) {
+    previewGrid.classList.remove("hidden");
+    uploadZone.classList.add("has-file");
+    hideError();
+  }
+  renderPreviews();
   updateSolveButton();
 }
 
-btnRemove.addEventListener("click", () => {
-  STATE.imageFile = null;
-  preview.classList.add("hidden");
-  uploadZone.classList.remove("has-file");
-  if (previewImg.src) { URL.revokeObjectURL(previewImg.src); previewImg.src = ""; }
-  fileInput.value = "";
+function removeImage(index) {
+  URL.revokeObjectURL(STATE.imageDataUrls[index]);
+  STATE.imageFiles.splice(index, 1);
+  STATE.imageDataUrls.splice(index, 1);
+  if (STATE.imageFiles.length === 0) {
+    previewGrid.classList.add("hidden");
+    uploadZone.classList.remove("has-file");
+  }
+  renderPreviews();
   updateSolveButton();
-});
+}
+
+function renderPreviews() {
+  previewGrid.innerHTML = "";
+  STATE.imageDataUrls.forEach((url, i) => {
+    const item = document.createElement("div");
+    item.className = "preview-item";
+    item.innerHTML = `
+      <img src="${url}" alt="预览 ${i + 1}">
+      <button class="preview-remove" data-index="${i}" title="移除图片">&times;</button>
+      <span class="preview-index">${i + 1}/${STATE.imageFiles.length}</span>
+    `;
+    item.querySelector(".preview-remove").addEventListener("click", (e) => {
+      e.stopPropagation();
+      removeImage(i);
+    });
+    previewGrid.appendChild(item);
+  });
+}
+
+function clearImages() {
+  STATE.imageDataUrls.forEach(url => URL.revokeObjectURL(url));
+  STATE.imageFiles = [];
+  STATE.imageDataUrls = [];
+}
 
 textInputArea.addEventListener("input", updateSolveButton);
 
@@ -208,7 +299,7 @@ btnSolve.addEventListener("click", handleSolve);
 
 async function handleSolve() {
   if (STATE.isSolving) return;
-  if (STATE.inputMode === "image" && !STATE.imageFile) return;
+  if (STATE.inputMode === "image" && STATE.imageFiles.length === 0) return;
   if (STATE.inputMode === "text" && !textInputArea.value.trim()) return;
 
   STATE.isSolving = true;
@@ -225,20 +316,43 @@ async function handleSolve() {
     resetChat();
   }
 
-  // 准备 SSE fetch
+  // 准备请求体
   let body;
+  let headers;
   if (STATE.inputMode === "image") {
-    body = new FormData();
-    body.append("image", STATE.imageFile);
+    const validFiles = STATE.imageFiles.filter(f => f instanceof File && f.size > 0);
+    if (validFiles.length === 0) {
+      showError("图片文件已失效，请重新选择");
+      STATE.isSolving = false;
+      setSolveLoading(false);
+      showCancelButton(false);
+      return;
+    }
+    // 将文件转为 base64 data URL，以 JSON 方式发送
+    const imagePromises = validFiles.map(f => new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(f);
+    }));
+    const imageDataUrls = (await Promise.all(imagePromises)).filter(Boolean);
+    if (imageDataUrls.length === 0) {
+      showError("图片读取失败，请重试");
+      STATE.isSolving = false;
+      setSolveLoading(false);
+      showCancelButton(false);
+      return;
+    }
     const questionText = ($("#solveQuestion").value || "").trim();
-    if (questionText) body.append("text", questionText);
+    body = JSON.stringify({ images: imageDataUrls, text: questionText || "" });
+    headers = { "Content-Type": "application/json" };
   } else {
     body = JSON.stringify({ text: textInputArea.value.trim() });
+    headers = { "Content-Type": "application/json" };
   }
 
   STATE.abortController = new AbortController();
   const url = STATE.inputMode === "image" ? "/api/solve" : "/api/solve-text";
-  const headers = STATE.inputMode === "text" ? { "Content-Type": "application/json" } : {};
 
   try {
     // 显示 loading
@@ -247,12 +361,14 @@ async function handleSolve() {
     $("#solutionLoading").classList.remove("hidden");
     $("#solutionLoading p").textContent = "识别题目中...";
 
-    const resp = await fetch(url, {
+    const fetchOpts = {
       method: "POST",
       headers,
       body,
       signal: STATE.abortController.signal,
-    });
+    };
+
+    const resp = await fetch(url, fetchOpts);
 
     if (!resp.ok) {
       const errData = await resp.json().catch(() => ({}));
@@ -262,6 +378,7 @@ async function handleSolve() {
     let recognizedText = "";
     let solutionText = "";
     let solutionStarted = false;
+    const renderSolution = createStreamRenderer($("#solutionBody"), renderMarkdownWithLatex);
 
     for await (const event of readSSE(resp)) {
       switch (event.type) {
@@ -282,12 +399,11 @@ async function handleSolve() {
             if (!recognizedText) $("#recognizedBox").style.display = "none";
           }
           solutionText += event.content;
-          // 实时渲染（不强制滚动，用户可自由翻阅上面内容）
-          $("#solutionBody").innerHTML = renderMarkdownWithLatex(solutionText);
-          typesetElement($("#solutionBody"));
+          renderSolution(solutionText);
           break;
 
         case "done":
+          renderSolution(solutionText, true);  // 最终渲染（含 MathJax）
           STATE.sessionId = event.session_id;
           if (STATE.sessionId) {
             localStorage.setItem("math_solver_session", STATE.sessionId);
@@ -495,12 +611,12 @@ async function handleSend() {
     }
 
     let replyText = "";
+    const renderChat = createStreamRenderer(replyDiv, renderMarkdownWithLatex);
     for await (const event of readSSE(resp)) {
       switch (event.type) {
         case "chunk":
           replyText += event.content;
-          replyDiv.innerHTML = renderMarkdownWithLatex(replyText);
-          typesetElement(replyDiv);
+          renderChat(replyText);
           scrollChatToBottom();
           break;
         case "error":
@@ -508,6 +624,7 @@ async function handleSend() {
           break;
       }
     }
+    renderChat(replyText, true);  // 最终渲染
   } catch (err) {
     if (err.name !== "AbortError" && err.message !== "CANCELLED") {
       replyDiv.textContent = `❌ 发送失败: ${err.message}`;
@@ -583,11 +700,10 @@ $("#btnReset").addEventListener("click", async () => {
     }).catch(() => {});
   }
   STATE.sessionId = null;
-  STATE.imageFile = null;
+  clearImages();
   localStorage.removeItem("math_solver_session");
-  preview.classList.add("hidden");
+  previewGrid.classList.add("hidden");
   uploadZone.classList.remove("has-file");
-  if (previewImg.src) { URL.revokeObjectURL(previewImg.src); previewImg.src = ""; }
   fileInput.value = "";
   textInputArea.value = "";
   $("#solveQuestion").value = "";

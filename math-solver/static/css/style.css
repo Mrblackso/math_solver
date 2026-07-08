@@ -154,17 +154,35 @@ body {
 .text-input.hidden { display: none; }
 
 /* 预览 */
-.preview { position: relative; border-radius: var(--radius-sm); overflow: hidden; }
-.preview.hidden { display: none; }
-.preview img { width: 100%; display: block; border-radius: var(--radius-sm); border: 1px solid var(--border); }
-.preview-remove {
-  position: absolute; top: 6px; right: 6px;
-  width: 28px; height: 28px; border-radius: 50%;
-  background: rgba(0,0,0,.55); color: #fff; border: none; font-size: 18px;
-  cursor: pointer; display: flex; align-items: center; justify-content: center;
-  line-height: 1;
+.preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
 }
-.preview-remove:hover { background: rgba(0,0,0,.75); }
+.preview-grid.hidden { display: none; }
+
+.preview-item {
+  position: relative; border-radius: var(--radius-sm); overflow: hidden;
+  border: 1px solid var(--border); background: #f9fafb;
+}
+.preview-item img {
+  width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block;
+}
+.preview-index {
+  position: absolute; bottom: 4px; left: 4px;
+  background: rgba(0,0,0,.55); color: #fff; font-size: 0.7rem;
+  padding: 1px 6px; border-radius: 4px;
+  pointer-events: none;
+}
+.preview-remove {
+  position: absolute; top: 4px; right: 4px;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: rgba(0,0,0,.55); color: #fff; border: none; font-size: 16px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  line-height: 1; z-index: 1;
+}
+.preview-remove:hover { background: rgba(0,0,0,.8); }
 
 /* 按钮行（解答 + 取消） */
 .btn-row { display: flex; gap: 8px; margin-top: 12px; }

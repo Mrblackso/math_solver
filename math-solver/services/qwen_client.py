@@ -104,26 +104,37 @@ def _call_api_stream(messages: list[dict], temperature: float = 0.3):
         resp.close()
 
 
-def recognize_image(image_path: str, user_text: str = "") -> str:
+def recognize_image(image_paths: list[str], user_text: str = "") -> str:
     """发送图片到 VL 模型，识别数学题目（同步，较快不做流式）
 
+    image_paths: 图片路径列表（最多5张），同一道题的多张图片
     user_text: 用户对图片的额外说明或提问，如"只做第2小问"
     """
-    data_url = _image_to_data_url(image_path)
-    base_prompt = (
-        "请仔细识别图片中的所有数学内容，包括题目文字、数学公式、符号等。\n"
-        + LATEX_HINT + "\n"
-        "只做识别和转写，不要解答。用中文输出。"
-    )
+    # 构建多图片 content 数组
+    content = []
+    for i, path in enumerate(image_paths):
+        data_url = _image_to_data_url(path)
+        content.append({"type": "image_url", "image_url": {"url": data_url}})
+
+    n = len(image_paths)
+    if n == 1:
+        base_prompt = (
+            "请仔细识别图片中的所有数学内容，包括题目文字、数学公式、符号等。\n"
+            + LATEX_HINT + "\n"
+            "只做识别和转写，不要解答。用中文输出。"
+        )
+    else:
+        base_prompt = (
+            f"以下是同一道数学题目的 {n} 张图片（可能是题目的不同部分、不同页或附图），"
+            "请综合所有图片，识别完整的数学内容，包括题目文字、数学公式、符号等。\n"
+            + LATEX_HINT + "\n"
+            "只做识别和转写，不要解答。用中文输出。"
+        )
     if user_text:
         base_prompt += f"\n\n【用户附加说明】\n{user_text}\n\n请结合以上说明进行识别和转写。"
-    messages = [{
-        "role": "user",
-        "content": [
-            {"type": "image_url", "image_url": {"url": data_url}},
-            {"type": "text", "text": base_prompt},
-        ],
-    }]
+
+    content.append({"type": "text", "text": base_prompt})
+    messages = [{"role": "user", "content": content}]
     return _call_api(messages, temperature=0.1)
 
 
