@@ -16,6 +16,7 @@ class Session:
     recognized_text: str = ""
     solution: str = ""
     chat_history: list = field(default_factory=list)  # [{"role":"user"|"assistant", "content":"..."}]
+    history_id: str = ""  # 关联的浏览记录 ID，用于追问时更新
 
 
 class SessionManager:

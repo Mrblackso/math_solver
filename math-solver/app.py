@@ -14,11 +14,15 @@ from services.qwen_client import (
     _build_user_content,
 )
 from services.session_manager import SessionManager
+from services.history_manager import HistoryManager
+from services.error_book_manager import ErrorBookManager
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
 app.config["MAX_CONTENT_LENGTH"] = MAX_IMAGE_SIZE_MB * 1024 * 1024
 
 session_manager = SessionManager()
+history_manager = HistoryManager()
+error_book_manager = ErrorBookManager()
 
 
 # ==================== 工具函数 ====================
@@ -64,6 +68,14 @@ def index():
     if not is_configured():
         return redirect("/settings")
     return send_from_directory("templates", "index.html")
+
+
+@app.route("/data/images/<path:filename>")
+def serve_data_image(filename):
+    """提供 data/images 目录下的缩略图"""
+    import os as _os
+    data_dir = _os.path.join(_os.path.dirname(__file__), "data", "images")
+    return send_from_directory(data_dir, filename)
 
 
 # ==================== SSE 流式 API ====================
@@ -128,11 +140,20 @@ def api_solve():
                 full_solution += chunk
                 yield _sse_event({"type": "chunk", "content": chunk})
 
+            # 保存浏览记录
+            history_record = history_manager.add(
+                input_mode="image",
+                question_text=user_text,
+                recognized_text=recognized_text,
+                solution=full_solution,
+                image_data_urls=data_urls,
+            )
             # 创建会话
             session = session_manager.create(
                 recognized_text=recognized_text,
                 solution=full_solution,
             )
+            session.history_id = history_record["id"]
             yield _sse_event({"type": "done", "session_id": session.session_id})
 
         except GeneratorExit:
@@ -178,10 +199,18 @@ def api_solve_text():
                 full_solution += chunk
                 yield _sse_event({"type": "chunk", "content": chunk})
 
+            # 保存浏览记录
+            history_record = history_manager.add(
+                input_mode="text",
+                question_text=text,
+                recognized_text=recognized_text,
+                solution=full_solution,
+            )
             session = session_manager.create(
                 recognized_text=recognized_text,
                 solution=full_solution,
             )
+            session.history_id = history_record["id"]
             yield _sse_event({"type": "done", "session_id": session.session_id})
 
         except GeneratorExit:
@@ -259,6 +288,10 @@ def api_chat():
             session.chat_history.append({"role": "assistant", "content": full_reply})
             if len(session.chat_history) > 20:
                 session.chat_history = session.chat_history[-20:]
+
+            # 同步更新浏览记录中的 chat_history
+            if session.history_id:
+                history_manager.append_chat(session.history_id, session.chat_history)
 
             yield _sse_event({"type": "done"})
 
@@ -350,6 +383,150 @@ def api_settings():
         os.environ["DASHSCOPE_BASE_URL"] = base_url
 
     return jsonify({"success": True})
+
+
+# ==================== 浏览记录 API ====================
+
+@app.route("/api/history", methods=["GET"])
+def api_history_list():
+    """浏览记录列表（分页）"""
+    page = request.args.get("page", 1, type=int)
+    page_size = request.args.get("page_size", 20, type=int)
+    result = history_manager.list_all(page=page, page_size=min(page_size, 50))
+    return jsonify(result)
+
+
+@app.route("/api/history/<record_id>", methods=["GET"])
+def api_history_detail(record_id):
+    """浏览记录详情"""
+    record = history_manager.get(record_id)
+    if not record:
+        return jsonify({"error": "记录不存在"}), 404
+    return jsonify(record)
+
+
+@app.route("/api/history/<record_id>", methods=["DELETE"])
+def api_history_delete(record_id):
+    """删除浏览记录"""
+    ok = history_manager.delete(record_id)
+    if not ok:
+        return jsonify({"error": "记录不存在"}), 404
+    return jsonify({"success": True})
+
+
+# ==================== 错题本 API（多本分类） ====================
+
+@app.route("/api/error-books", methods=["GET"])
+def api_error_books_list():
+    """列出所有错题本"""
+    return jsonify({"books": error_book_manager.list_books()})
+
+
+@app.route("/api/error-books", methods=["POST"])
+def api_error_books_create():
+    """新建错题本"""
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "请输入错题本名称"}), 400
+    if len(name) > 50:
+        return jsonify({"error": "名称过长"}), 400
+    book = error_book_manager.create_book(name)
+    return jsonify(book)
+
+
+@app.route("/api/error-books/<book_id>", methods=["PUT"])
+def api_error_books_rename(book_id):
+    """重命名错题本"""
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "请输入错题本名称"}), 400
+    book = error_book_manager.rename_book(book_id, name)
+    if not book:
+        return jsonify({"error": "错题本不存在"}), 404
+    return jsonify(book)
+
+
+@app.route("/api/error-books/<book_id>", methods=["DELETE"])
+def api_error_books_delete(book_id):
+    """删除错题本"""
+    ok = error_book_manager.delete_book(book_id)
+    if not ok:
+        return jsonify({"error": "错题本不存在"}), 404
+    return jsonify({"success": True})
+
+
+@app.route("/api/error-books/<book_id>/items", methods=["GET"])
+def api_error_book_items(book_id):
+    """错题本题目列表（支持 ?tag= 筛选）"""
+    tag = request.args.get("tag", "").strip()
+    page = request.args.get("page", 1, type=int)
+    page_size = request.args.get("page_size", 20, type=int)
+    result = error_book_manager.list_items(book_id, tag=tag, page=page, page_size=min(page_size, 50))
+    if result is None:
+        return jsonify({"error": "错题本不存在"}), 404
+    return jsonify(result)
+
+
+@app.route("/api/error-books/<book_id>/items", methods=["POST"])
+def api_error_book_add_item(book_id):
+    """从浏览记录添加题目到错题本"""
+    data = request.get_json(silent=True) or {}
+    history_id = (data.get("history_id") or "").strip()
+    tags = data.get("tags", [])
+    note = (data.get("note") or "").strip()
+
+    if not history_id:
+        return jsonify({"error": "缺少 history_id"}), 400
+
+    record = history_manager.get(history_id)
+    if not record:
+        return jsonify({"error": "浏览记录不存在"}), 404
+
+    item = error_book_manager.add_item(book_id, record, tags=tags, note=note)
+    if item is None:
+        return jsonify({"error": "错题本不存在"}), 404
+    return jsonify(item)
+
+
+@app.route("/api/error-books/<book_id>/items/<item_id>", methods=["GET"])
+def api_error_book_item_detail(book_id, item_id):
+    """错题本题目详情"""
+    item = error_book_manager.get_item(book_id, item_id)
+    if not item:
+        return jsonify({"error": "条目不存在"}), 404
+    return jsonify(item)
+
+
+@app.route("/api/error-books/<book_id>/items/<item_id>", methods=["PUT"])
+def api_error_book_item_update(book_id, item_id):
+    """更新题目标签/笔记"""
+    data = request.get_json(silent=True) or {}
+    tags = data.get("tags", None)
+    note = data.get("note", None)
+    item = error_book_manager.update_item(book_id, item_id, tags=tags, note=note)
+    if not item:
+        return jsonify({"error": "条目不存在"}), 404
+    return jsonify(item)
+
+
+@app.route("/api/error-books/<book_id>/items/<item_id>", methods=["DELETE"])
+def api_error_book_item_delete(book_id, item_id):
+    """删除题目"""
+    ok = error_book_manager.delete_item(book_id, item_id)
+    if not ok:
+        return jsonify({"error": "条目不存在"}), 404
+    return jsonify({"success": True})
+
+
+@app.route("/api/error-books/<book_id>/tags", methods=["GET"])
+def api_error_book_tags(book_id):
+    """错题本标签及计数"""
+    tags = error_book_manager.get_tags(book_id)
+    if tags is None:
+        return jsonify({"error": "错题本不存在"}), 404
+    return jsonify({"tags": tags})
 
 
 # ==================== 非流式 API（保留兼容） ====================
